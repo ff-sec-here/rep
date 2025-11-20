@@ -5,6 +5,7 @@ let requests = [];
 let selectedRequest = null;
 let currentFilter = 'all';
 let currentSearchTerm = '';
+let useRegex = false;
 let requestHistory = [];
 let historyIndex = -1;
 
@@ -14,6 +15,7 @@ const STAR_ICON_OUTLINE = '<svg viewBox="0 0 24 24" width="14" height="14" fill=
 // DOM Elements
 const requestList = document.getElementById('request-list');
 const searchBar = document.getElementById('search-bar');
+const regexToggle = document.getElementById('regex-toggle');
 const rawRequestInput = document.getElementById('raw-request-input');
 const useHttpsCheckbox = document.getElementById('use-https');
 const sendBtn = document.getElementById('send-btn');
@@ -256,7 +258,24 @@ function setupEventListeners() {
 
     // Search Bar
     searchBar.addEventListener('input', (e) => {
-        currentSearchTerm = e.target.value.toLowerCase();
+        currentSearchTerm = useRegex ? e.target.value : e.target.value.toLowerCase();
+        filterRequests();
+    });
+
+    // Regex Toggle
+    regexToggle.addEventListener('click', () => {
+        useRegex = !useRegex;
+        regexToggle.classList.toggle('active', useRegex);
+        
+        // Update search term based on mode
+        if (useRegex) {
+            currentSearchTerm = searchBar.value;
+            searchBar.placeholder = 'Filter with regex (e.g., /user/\\d+)...';
+        } else {
+            currentSearchTerm = searchBar.value.toLowerCase();
+            searchBar.placeholder = 'Filter requests...';
+        }
+        
         filterRequests();
     });
 
@@ -351,37 +370,77 @@ function showCopySuccess(btn) {
     }, 1500);
 }
 
+function testRegex(pattern, text) {
+    try {
+        const regex = new RegExp(pattern);
+        return regex.test(text);
+    } catch (e) {
+        // Invalid regex pattern - don't match anything
+        return false;
+    }
+}
+
 function filterRequests() {
     const items = requestList.querySelectorAll('.request-item');
     let visibleCount = 0;
+    let regexError = false;
 
     items.forEach((item, index) => {
         const request = requests[parseInt(item.dataset.index)];
         if (!request) return;
 
-        const url = request.request.url.toLowerCase();
+        const url = request.request.url;
+        const urlLower = url.toLowerCase();
         const method = request.request.method.toUpperCase();
 
         // Build searchable text from headers
         let headersText = '';
+        let headersTextLower = '';
         if (request.request.headers) {
             request.request.headers.forEach(header => {
-                headersText += `${header.name}: ${header.value} `.toLowerCase();
+                const headerLine = `${header.name}: ${header.value} `;
+                headersText += headerLine;
+                headersTextLower += headerLine.toLowerCase();
             });
         }
 
         // Get request body if available
         let bodyText = '';
+        let bodyTextLower = '';
         if (request.request.postData && request.request.postData.text) {
-            bodyText = request.request.postData.text.toLowerCase();
+            bodyText = request.request.postData.text;
+            bodyTextLower = bodyText.toLowerCase();
         }
 
         // Check search term (search in URL, method, headers, and body)
-        const matchesSearch = currentSearchTerm === '' ||
-            url.includes(currentSearchTerm) ||
-            method.includes(currentSearchTerm.toUpperCase()) ||
-            headersText.includes(currentSearchTerm) ||
-            bodyText.includes(currentSearchTerm);
+        let matchesSearch = false;
+        if (currentSearchTerm === '') {
+            matchesSearch = true;
+        } else if (useRegex) {
+            // Use regex matching
+            try {
+                const regex = new RegExp(currentSearchTerm);
+                matchesSearch = 
+                    regex.test(url) ||
+                    regex.test(method) ||
+                    regex.test(headersText) ||
+                    regex.test(bodyText);
+            } catch (e) {
+                // Invalid regex - mark error but don't break the loop
+                if (!regexError) {
+                    regexError = true;
+                    console.warn('Invalid regex pattern:', currentSearchTerm, e);
+                }
+                matchesSearch = false;
+            }
+        } else {
+            // Plain text matching (case-insensitive)
+            matchesSearch = 
+                urlLower.includes(currentSearchTerm) ||
+                method.includes(currentSearchTerm.toUpperCase()) ||
+                headersTextLower.includes(currentSearchTerm) ||
+                bodyTextLower.includes(currentSearchTerm);
+        }
 
         // Check filter
         let matchesFilter = true;
@@ -403,14 +462,31 @@ function filterRequests() {
         }
     });
 
+    // Show error state if regex is invalid
+    if (regexError && useRegex && currentSearchTerm) {
+        regexToggle.classList.add('error');
+        regexToggle.title = 'Invalid regex pattern';
+    } else {
+        regexToggle.classList.remove('error');
+        regexToggle.title = useRegex 
+            ? 'Regex mode enabled (click to disable)' 
+            : 'Toggle Regex Mode (enable to use regex patterns)';
+    }
+
     // Show empty state if no results
     const emptyState = requestList.querySelector('.empty-state');
     if (visibleCount === 0 && items.length > 0) {
         if (!emptyState) {
             const div = document.createElement('div');
             div.className = 'empty-state';
-            div.textContent = 'No requests match your filter';
+            div.textContent = regexError && useRegex && currentSearchTerm
+                ? 'Invalid regex pattern'
+                : 'No requests match your filter';
             requestList.appendChild(div);
+        } else {
+            emptyState.textContent = regexError && useRegex && currentSearchTerm
+                ? 'Invalid regex pattern'
+                : 'No requests match your filter';
         }
     } else if (emptyState && visibleCount > 0) {
         emptyState.remove();

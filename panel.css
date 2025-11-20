@@ -41,16 +41,60 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
+.search-container {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
 #search-bar {
-    width: 100%;
+    flex: 1;
     padding: 5px 8px;
     background: var(--input-bg);
     border: 1px solid var(--border-color);
     color: var(--text-color);
     border-radius: 4px;
     box-sizing: border-box;
-    margin-bottom: 6px;
     font-size: 12px;
+}
+
+.regex-toggle {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: #9aa0a6;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    transition: all 0.2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.regex-toggle:hover {
+    background: rgba(138, 180, 248, 0.1);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.regex-toggle.active {
+    background: rgba(138, 180, 248, 0.2);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.regex-toggle.error {
+    border-color: var(--error-color);
+    color: var(--error-color);
+    background: rgba(242, 139, 130, 0.1);
+}
+
+.regex-icon {
+    font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .filters {

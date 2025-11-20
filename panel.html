@@ -13,7 +13,12 @@
         <!-- Left Sidebar: Request List -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <input type="text" id="search-bar" placeholder="Filter requests...">
+                <div class="search-container">
+                    <input type="text" id="search-bar" placeholder="Filter requests...">
+                    <button id="regex-toggle" class="regex-toggle" title="Toggle Regex Mode (enable to use regex patterns)">
+                        <span class="regex-icon">/regex/</span>
+                    </button>
+                </div>
                 <div class="filters">
                     <button class="filter-btn active" data-filter="all">All</button>
                     <button class="filter-btn" data-filter="GET">GET</button>
