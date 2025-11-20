@@ -26,9 +26,13 @@ const historyBackBtn = document.getElementById('history-back');
 const historyFwdBtn = document.getElementById('history-fwd');
 const copyReqBtn = document.getElementById('copy-req-btn');
 const copyResBtn = document.getElementById('copy-res-btn');
+const screenshotBtn = document.getElementById('screenshot-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Wait for html2canvas to be available
+    waitForHtml2Canvas();
+    
     setupNetworkListener();
     setupEventListeners();
     setupResizeHandle();
@@ -52,6 +56,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+function waitForHtml2Canvas() {
+    // Check if html2canvas is already loaded (check both window.html2canvas and global html2canvas)
+    const checkHtml2Canvas = () => {
+        return typeof html2canvas !== 'undefined' || 
+               (typeof window !== 'undefined' && typeof window.html2canvas !== 'undefined');
+    };
+    
+    if (checkHtml2Canvas()) {
+        console.log('html2canvas loaded');
+        return;
+    }
+    
+    // Wait for it to load (check every 100ms for up to 5 seconds)
+    let attempts = 0;
+    const maxAttempts = 50;
+    const checkInterval = setInterval(() => {
+        attempts++;
+        if (checkHtml2Canvas()) {
+            console.log('html2canvas loaded after', attempts * 100, 'ms');
+            clearInterval(checkInterval);
+        } else if (attempts >= maxAttempts) {
+            console.error('html2canvas failed to load after 5 seconds');
+            clearInterval(checkInterval);
+            // Disable screenshot button if library doesn't load
+            if (screenshotBtn) {
+                screenshotBtn.disabled = true;
+                screenshotBtn.title = 'Screenshot unavailable: html2canvas not loaded';
+            }
+        }
+    }, 100);
+}
 
 function setupNetworkListener() {
     chrome.devtools.network.onRequestFinished.addListener((request) => {
@@ -317,6 +353,11 @@ function setupEventListeners() {
         const text = rawResponseDisplay.innerText;
         copyToClipboard(text, copyResBtn);
     });
+
+    // Screenshot Button
+    screenshotBtn.addEventListener('click', async () => {
+        await captureScreenshot();
+    });
 }
 
 async function copyToClipboard(text, btn) {
@@ -368,6 +409,357 @@ function showCopySuccess(btn) {
     setTimeout(() => {
         btn.innerHTML = originalHtml;
     }, 1500);
+}
+
+async function captureScreenshot() {
+    // Get html2canvas function (check both global and window scope)
+    let html2canvasFn = typeof html2canvas !== 'undefined' 
+        ? html2canvas 
+        : (typeof window !== 'undefined' && typeof window.html2canvas !== 'undefined' 
+            ? window.html2canvas 
+            : null);
+    
+    if (!html2canvasFn) {
+        // Try waiting a moment for the script to load
+        await new Promise(resolve => setTimeout(resolve, 200));
+        html2canvasFn = typeof html2canvas !== 'undefined' 
+            ? html2canvas 
+            : (typeof window !== 'undefined' && typeof window.html2canvas !== 'undefined' 
+                ? window.html2canvas 
+                : null);
+        
+        if (!html2canvasFn) {
+            console.error('html2canvas library not loaded');
+            const originalHtml = screenshotBtn.innerHTML;
+            screenshotBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#f28b82"/></svg>';
+            setTimeout(() => {
+                screenshotBtn.innerHTML = originalHtml;
+            }, 2000);
+            return;
+        }
+    }
+
+    // Show loading state
+    const originalHtml = screenshotBtn.innerHTML;
+    screenshotBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" fill="currentColor"/></svg>';
+    screenshotBtn.disabled = true;
+
+    try {
+        // Capture the main content area (both request and response panes)
+        const mainContent = document.querySelector('.main-content');
+        
+        if (!mainContent) {
+            throw new Error('Main content area not found');
+        }
+
+        const requestPane = document.querySelector('.request-pane');
+        const responsePane = document.querySelector('.response-pane');
+        const requestPaneBody = requestPane ? requestPane.querySelector('.pane-body') : null;
+        const responsePaneBody = responsePane ? responsePane.querySelector('.pane-body') : null;
+        const requestEditor = document.getElementById('raw-request-input');
+        const responseDisplay = document.getElementById('raw-response-display');
+        
+        // Store original styles and scroll positions
+        const originalStyles = {
+            requestPaneBody: requestPaneBody ? {
+                overflow: requestPaneBody.style.overflow,
+                height: requestPaneBody.style.height,
+                maxHeight: requestPaneBody.style.maxHeight
+            } : null,
+            responsePaneBody: responsePaneBody ? {
+                overflow: responsePaneBody.style.overflow,
+                height: responsePaneBody.style.height,
+                maxHeight: responsePaneBody.style.maxHeight
+            } : null,
+            requestEditor: requestEditor ? {
+                overflow: requestEditor.style.overflow,
+                height: requestEditor.style.height,
+                maxHeight: requestEditor.style.maxHeight
+            } : null,
+            responseDisplay: responseDisplay ? {
+                overflow: responseDisplay.style.overflow,
+                height: responseDisplay.style.height,
+                maxHeight: responseDisplay.style.maxHeight
+            } : null,
+            mainContent: {
+                overflow: mainContent.style.overflow,
+                height: mainContent.style.height
+            }
+        };
+
+        const originalScrollPositions = {
+            requestEditor: requestEditor ? requestEditor.scrollTop : 0,
+            responseDisplay: responseDisplay ? responseDisplay.scrollTop : 0,
+            mainContent: mainContent.scrollTop
+        };
+
+        // Temporarily expand elements to show full content
+        if (requestPaneBody) {
+            requestPaneBody.style.overflow = 'visible';
+            requestPaneBody.style.height = 'auto';
+            requestPaneBody.style.maxHeight = 'none';
+        }
+        
+        if (responsePaneBody) {
+            responsePaneBody.style.overflow = 'visible';
+            responsePaneBody.style.height = 'auto';
+            responsePaneBody.style.maxHeight = 'none';
+        }
+        
+        if (requestEditor) {
+            requestEditor.style.overflow = 'visible';
+            requestEditor.style.height = 'auto';
+            requestEditor.style.maxHeight = 'none';
+            requestEditor.scrollTop = 0;
+        }
+        
+        if (responseDisplay) {
+            responseDisplay.style.overflow = 'visible';
+            responseDisplay.style.height = 'auto';
+            responseDisplay.style.maxHeight = 'none';
+            responseDisplay.scrollTop = 0;
+        }
+        
+        mainContent.style.overflow = 'visible';
+        mainContent.scrollTop = 0;
+
+        // Calculate full content heights before capturing
+        // We need to measure each element's full content height
+        
+        if (requestEditor) {
+            // Get full content height by temporarily expanding
+            requestEditor.style.overflow = 'visible';
+            requestEditor.style.height = 'auto';
+            requestEditor.style.maxHeight = 'none';
+            
+            // Force browser to recalculate layout
+            void requestEditor.offsetHeight;
+            
+            // Get the actual full height including all content
+            const fullEditorHeight = Math.max(
+                requestEditor.scrollHeight,
+                requestEditor.clientHeight,
+                requestEditor.offsetHeight
+            );
+            
+            requestEditor.style.height = fullEditorHeight + 'px';
+        }
+        
+        if (responseDisplay) {
+            // Get full content height by temporarily expanding
+            responseDisplay.style.overflow = 'visible';
+            responseDisplay.style.height = 'auto';
+            responseDisplay.style.maxHeight = 'none';
+            
+            // Force browser to recalculate layout
+            void responseDisplay.offsetHeight;
+            
+            // Get the actual full height including all content
+            const fullDisplayHeight = Math.max(
+                responseDisplay.scrollHeight,
+                responseDisplay.clientHeight,
+                responseDisplay.offsetHeight
+            );
+            
+            responseDisplay.style.height = fullDisplayHeight + 'px';
+        }
+        
+        if (requestPaneBody) {
+            requestPaneBody.style.height = 'auto';
+            void requestPaneBody.offsetHeight; // Force reflow
+            requestPaneBody.style.height = Math.max(
+                requestPaneBody.scrollHeight,
+                requestPaneBody.clientHeight
+            ) + 'px';
+        }
+        
+        if (responsePaneBody) {
+            responsePaneBody.style.height = 'auto';
+            void responsePaneBody.offsetHeight; // Force reflow
+            responsePaneBody.style.height = Math.max(
+                responsePaneBody.scrollHeight,
+                responsePaneBody.clientHeight
+            ) + 'px';
+        }
+        
+        // Wait for layout recalculation
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Calculate full height including all panes and their headers
+        let requestPaneFullHeight = 0;
+        let responsePaneFullHeight = 0;
+        
+        if (requestPane) {
+            // Include header height + body height
+            const requestHeader = requestPane.querySelector('.pane-header');
+            const headerHeight = requestHeader ? requestHeader.offsetHeight : 0;
+            requestPaneFullHeight = headerHeight + (requestPaneBody ? requestPaneBody.scrollHeight : 0);
+        }
+        
+        if (responsePane) {
+            // Include header height + body height
+            const responseHeader = responsePane.querySelector('.pane-header');
+            const headerHeight = responseHeader ? responseHeader.offsetHeight : 0;
+            responsePaneFullHeight = headerHeight + (responsePaneBody ? responsePaneBody.scrollHeight : 0);
+        }
+        
+        // Use the maximum of both panes to ensure we capture everything
+        const fullHeight = Math.max(
+            requestPaneFullHeight,
+            responsePaneFullHeight,
+            mainContent.scrollHeight,
+            mainContent.offsetHeight
+        ) + 100; // Extra padding to ensure we get everything
+        
+        const fullWidth = Math.max(
+            mainContent.scrollWidth,
+            mainContent.offsetWidth
+        );
+
+        // Use html2canvas with onclone callback to ensure full content is visible
+        const canvas = await html2canvasFn(mainContent, {
+            backgroundColor: '#202124',
+            scale: 2, // Higher quality
+            logging: false,
+            useCORS: true,
+            allowTaint: true,
+            width: fullWidth,
+            height: fullHeight,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: fullWidth,
+            windowHeight: fullHeight,
+            onclone: (clonedDoc) => {
+                // Modify the cloned document to show full content
+                const clonedMainContent = clonedDoc.querySelector('.main-content');
+                if (clonedMainContent) {
+                    clonedMainContent.style.overflow = 'visible';
+                    clonedMainContent.style.height = fullHeight + 'px';
+                    
+                    // Expand all pane bodies
+                    const clonedPaneBodies = clonedDoc.querySelectorAll('.pane-body');
+                    clonedPaneBodies.forEach(paneBody => {
+                        paneBody.style.overflow = 'visible';
+                        paneBody.style.height = 'auto';
+                        paneBody.style.maxHeight = 'none';
+                        // Force expansion
+                        paneBody.style.display = 'flex';
+                    });
+                    
+                    // Expand editors and set explicit heights based on content
+                    const clonedRequestEditor = clonedDoc.getElementById('raw-request-input');
+                    const clonedResponseDisplay = clonedDoc.getElementById('raw-response-display');
+                    
+                    if (clonedRequestEditor) {
+                        clonedRequestEditor.style.overflow = 'visible';
+                        clonedRequestEditor.style.height = 'auto';
+                        clonedRequestEditor.style.maxHeight = 'none';
+                        clonedRequestEditor.scrollTop = 0;
+                        // Force browser to calculate full height
+                        void clonedRequestEditor.offsetHeight;
+                        clonedRequestEditor.style.height = Math.max(
+                            clonedRequestEditor.scrollHeight,
+                            clonedRequestEditor.clientHeight
+                        ) + 'px';
+                    }
+                    
+                    if (clonedResponseDisplay) {
+                        clonedResponseDisplay.style.overflow = 'visible';
+                        clonedResponseDisplay.style.height = 'auto';
+                        clonedResponseDisplay.style.maxHeight = 'none';
+                        clonedResponseDisplay.scrollTop = 0;
+                        // Force browser to calculate full height
+                        void clonedResponseDisplay.offsetHeight;
+                        clonedResponseDisplay.style.height = Math.max(
+                            clonedResponseDisplay.scrollHeight,
+                            clonedResponseDisplay.clientHeight
+                        ) + 'px';
+                    }
+                }
+            }
+        });
+
+        // Restore original styles and scroll positions
+        if (requestPaneBody && originalStyles.requestPaneBody) {
+            requestPaneBody.style.overflow = originalStyles.requestPaneBody.overflow || '';
+            requestPaneBody.style.height = originalStyles.requestPaneBody.height || '';
+            requestPaneBody.style.maxHeight = originalStyles.requestPaneBody.maxHeight || '';
+        }
+        
+        if (responsePaneBody && originalStyles.responsePaneBody) {
+            responsePaneBody.style.overflow = originalStyles.responsePaneBody.overflow || '';
+            responsePaneBody.style.height = originalStyles.responsePaneBody.height || '';
+            responsePaneBody.style.maxHeight = originalStyles.responsePaneBody.maxHeight || '';
+        }
+        
+        if (requestEditor && originalStyles.requestEditor) {
+            requestEditor.style.overflow = originalStyles.requestEditor.overflow || '';
+            requestEditor.style.height = originalStyles.requestEditor.height || '';
+            requestEditor.style.maxHeight = originalStyles.requestEditor.maxHeight || '';
+            requestEditor.scrollTop = originalScrollPositions.requestEditor;
+        }
+        
+        if (responseDisplay && originalStyles.responseDisplay) {
+            responseDisplay.style.overflow = originalStyles.responseDisplay.overflow || '';
+            responseDisplay.style.height = originalStyles.responseDisplay.height || '';
+            responseDisplay.style.maxHeight = originalStyles.responseDisplay.maxHeight || '';
+            responseDisplay.scrollTop = originalScrollPositions.responseDisplay;
+        }
+        
+        mainContent.style.overflow = originalStyles.mainContent.overflow || '';
+        mainContent.style.height = originalStyles.mainContent.height || '';
+        mainContent.scrollTop = originalScrollPositions.mainContent;
+
+        // Convert canvas to blob and download
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                throw new Error('Failed to create image blob');
+            }
+
+            // Create download link
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const method = selectedRequest ? selectedRequest.request.method : 'REQUEST';
+            let pathPart = 'unknown';
+            if (selectedRequest) {
+                try {
+                    const urlObj = new URL(selectedRequest.request.url);
+                    pathPart = urlObj.pathname
+                        .replace(/\//g, '_')
+                        .replace(/[^a-zA-Z0-9_-]/g, '')
+                        .slice(0, 50) || 'path'; // Limit length
+                } catch (e) {
+                    pathPart = 'request';
+                }
+            }
+            const filename = `request-response-${method}-${pathPart}-${timestamp}.png`;
+            
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            // Show success feedback
+            screenshotBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#81c995"/></svg>';
+            setTimeout(() => {
+                screenshotBtn.innerHTML = originalHtml;
+                screenshotBtn.disabled = false;
+            }, 1500);
+        }, 'image/png');
+
+    } catch (error) {
+        console.error('Screenshot error:', error);
+        screenshotBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" fill="#f28b82"/></svg>';
+        setTimeout(() => {
+            screenshotBtn.innerHTML = originalHtml;
+            screenshotBtn.disabled = false;
+        }, 1500);
+    }
 }
 
 function testRegex(pattern, text) {
