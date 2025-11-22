@@ -19,7 +19,13 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
 - **Starring**: Pin important requests to keep them at the top of your list.
 - **Clear Workspace**: Instantly clear all captured requests with a single click to start a fresh session.
 - **Export & Import**: Export requests as JSON to share findings with teammates or import them later. Perfect for rep+ ↔ rep+ workflows.
-- **Bulk Replay**: Intruder-style attacks! Mark multiple parameters with `§`, configure separate payloads (List or Numbers) for each position, and inspect detailed results for every attempt.
+- **Bulk Replay**: Burp Suite Intruder-style attacks with four attack modes:
+  - **Sniper**: Tests each position independently with its own payloads
+  - **Battering Ram**: All positions receive the same payload
+  - **Pitchfork**: Zips payloads across positions (index-wise)
+  - **Cluster Bomb**: Tests all combinations (Cartesian product)
+  
+  Mark multiple parameters with `§`, choose your attack type, configure payloads (List or Numbers) for each position, and inspect detailed results for every attempt. Includes pause/resume functionality for long-running attacks.
 
 ## Installation
 
