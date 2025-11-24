@@ -146,16 +146,17 @@ export function selectRequest(index) {
     elements.useHttpsCheckbox.checked = urlObj.protocol === 'https:';
 
     // Construct Raw Request
-    let rawText = `${method} ${path} ${httpVersion} \n`;
+    let rawText = `${method} ${path} ${httpVersion}\n`;
 
     let headers = state.selectedRequest.request.headers;
     const hasHost = headers.some(h => h.name.toLowerCase() === 'host');
     if (!hasHost) {
-        rawText += `Host: ${urlObj.host} \n`;
+        rawText += `Host: ${urlObj.host}\n`;
     }
 
     rawText += headers
-        .map(h => `${h.name}: ${h.value} `)
+        .filter(h => !h.name.startsWith(':'))
+        .map(h => `${h.name}: ${h.value}`)
         .join('\n');
 
     // Body
