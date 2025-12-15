@@ -5,6 +5,8 @@ import { events, EVENT_NAMES } from '../core/events.js';
 import { filterRequests } from './request-list.js';
 import { selectRequest, switchRequestView, switchResponseView, toggleLayout } from './request-editor.js';
 import { updateHistoryButtons } from './ui-utils.js';
+import { generateHexView } from './hex-view.js';
+import { generateJsonView } from './json-view.js';
 
 // DOM Elements (initialized in initUI)
 export const elements = {};
@@ -17,6 +19,9 @@ export function initUI() {
     elements.useHttpsCheckbox = document.getElementById('use-https');
     elements.sendBtn = document.getElementById('send-btn');
     elements.rawResponseDisplay = document.getElementById('raw-response-display');
+    elements.rawResponseText = document.getElementById('raw-response-text');
+    elements.hexResponseDisplay = document.getElementById('res-hex-display');
+    elements.jsonResponseDisplay = document.getElementById('res-json-display');
     elements.resStatus = document.getElementById('res-status');
     elements.resTime = document.getElementById('res-time');
     elements.resSize = document.getElementById('res-size');
@@ -341,6 +346,14 @@ function setupEventListeners() {
             elements.rawResponseDisplay.innerHTML = highlightHTTP(content || '');
             elements.rawResponseDisplay.style.display = 'block';
             elements.rawResponseDisplay.style.visibility = 'visible';
+        }
+        if (elements.rawResponseText)
+            elements.rawResponseText.textContent = content;
+        if (elements.hexResponseDisplay)
+            elements.hexResponseDisplay.textContent = generateHexView(content);
+        if (elements.jsonResponseDisplay) {
+            elements.jsonResponseDisplay.innerHTML = '';
+            elements.jsonResponseDisplay.appendChild(generateJsonView(content));
         }
     });
 

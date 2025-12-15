@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Repeater Panel</title>
     <link rel="stylesheet" href="css/panel.css">
+    <link rel="stylesheet" href="css/json-viewer.css">
 </head>
 
 <body>
@@ -275,6 +276,10 @@
                                 <pre id="res-hex-display" class="hex-display"></pre>
                             </div>
                             <div id="res-view-json" class="view-content" style="display: none;">
+                                <div class="json-warning-bar" style="display: none;">
+                                    <span class="json-warning-icon">⚠️</span>
+                                    <span class="json-warning-text">Not a valid JSON - showing raw body</span>
+                                </div>
                                 <pre id="res-json-display" class="json-display"></pre>
                             </div>
                         </div>
