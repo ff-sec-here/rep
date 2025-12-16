@@ -381,6 +381,25 @@
             </div>
         </div>
         <div class="context-menu-separator"></div>
+        <div class="context-menu-item has-submenu" id="ctx-copy-as-group">
+            <span>Copy as</span>
+            <span class="submenu-arrow">▶</span>
+            <div class="context-submenu">
+                <div class="context-menu-item" data-action="copy-as-curl" data-requires-full-selection="true">
+                    cURL
+                </div>
+                <div class="context-menu-item" data-action="copy-as-bash" data-requires-full-selection="true">
+                    PowerShell
+                </div>
+                <div class="context-menu-item" data-action="copy-as-python" data-requires-full-selection="true">
+                    Python (requests)
+                </div>
+                <div class="context-menu-item" data-action="copy-as-fetch" data-requires-full-selection="true">
+                    JavaScript fetch
+                </div>
+            </div>
+        </div>
+        <div class="context-menu-separator"></div>
         <div class="context-menu-item" data-action="mark-payload">Mark Payload (§)</div>
     </div>
 

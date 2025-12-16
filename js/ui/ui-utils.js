@@ -234,6 +234,13 @@ let currentSelection = null;
 let currentRange = null;
 let storedRangeInfo = null; // Store range info for better recovery
 
+// Helper to escape strings for single-quoted shell contexts (curl/bash)
+function shellEscapeSingle(str) {
+    if (str == null) return '';
+    // Replace ' with '\'' pattern for POSIX shells
+    return String(str).replace(/'/g, `'\\''`);
+}
+
 export function setupContextMenu() {
     // Right-click on editors
     [elements.rawRequestInput, elements.rawResponseDisplay].forEach(editor => {
@@ -328,6 +335,18 @@ export function setupContextMenu() {
                 currentRange = null;
                 storedRangeInfo = null;
             }
+
+            // Determine if full editor content is selected (only relevant for request editor)
+            const editorText = editor.textContent || editor.innerText || '';
+            const isRequestEditor = editor === elements.rawRequestInput;
+            let isFullSelection = false;
+            if (isRequestEditor && storedRangeInfo && editorText.length > 0) {
+                isFullSelection =
+                    storedRangeInfo.charStart === 0 &&
+                    storedRangeInfo.charEnd === editorText.length;
+            }
+
+            elements.contextMenu.dataset.fullSelection = isFullSelection ? 'true' : 'false';
             
             showContextMenu(e.clientX, e.clientY, editor);
         });
@@ -346,14 +365,34 @@ export function setupContextMenu() {
     // before the bulk replay handler runs.
     elements.contextMenu.addEventListener('click', (e) => {
         const item = e.target.closest('.context-menu-item[data-action]');
-        if (item) {
+        if (!item) return;
+
+        // Ignore clicks on disabled items
+        if (item.classList.contains('disabled')) {
+            e.stopPropagation();
+            return;
+        }
+
             e.stopPropagation();
             const action = item.dataset.action;
-            if (action && action !== 'mark-payload') {
-                handleEncodeDecode(action);
+        if (!action) return;
+
+        // "Mark Payload (§)" is handled elsewhere
+        if (action === 'mark-payload') {
                 hideContextMenu();
-            }
+            return;
         }
+
+        // Copy-as actions (curl, bash, etc.)
+        if (action.startsWith('copy-as-')) {
+            handleCopyAs(action);
+            hideContextMenu();
+            return;
+        }
+
+        // Default: encode/decode actions
+        handleEncodeDecode(action);
+        hideContextMenu();
     });
 
     // Handle submenu positioning
@@ -385,7 +424,30 @@ export function setupContextMenu() {
 }
 
 function showContextMenu(x, y, targetElement) {
-    elements.contextMenu.dataset.target = targetElement === elements.rawRequestInput ? 'request' : 'response';
+    const isRequest = targetElement === elements.rawRequestInput;
+    elements.contextMenu.dataset.target = isRequest ? 'request' : 'response';
+
+    // Configure visibility and enabled state for "Copy as" group
+    const copyAsGroup = elements.contextMenu.querySelector('#ctx-copy-as-group');
+    if (copyAsGroup) {
+        if (!isRequest) {
+            // Hide entirely for response editor
+            copyAsGroup.style.display = 'none';
+        } else {
+            copyAsGroup.style.display = '';
+            const requiresFullItems = copyAsGroup.querySelectorAll('[data-requires-full-selection="true"]');
+            const isFull =
+                elements.contextMenu.dataset.fullSelection &&
+                elements.contextMenu.dataset.fullSelection === 'true';
+            requiresFullItems.forEach(item => {
+                if (isFull) {
+                    item.classList.remove('disabled');
+                } else {
+                    item.classList.add('disabled');
+                }
+            });
+        }
+    }
 
     // Show first to measure, but keep invisible
     elements.contextMenu.style.visibility = 'hidden';
@@ -424,6 +486,9 @@ function hideContextMenu() {
     // Clear stored selected text and range
     if (elements.contextMenu.dataset.selectedText) {
         delete elements.contextMenu.dataset.selectedText;
+    }
+    if (elements.contextMenu.dataset.fullSelection) {
+        delete elements.contextMenu.dataset.fullSelection;
     }
     currentSelection = null;
     currentRange = null;
@@ -713,6 +778,188 @@ function handleEncodeDecode(action) {
             elements.rawRequestInput._undoDisabled = false;
         }
         alert(`Error: ${error.message}`);
+    }
+}
+
+/**
+ * Handle "Copy as ..." actions from the context menu.
+ * These operate only on the request editor and require full selection of the request.
+ */
+function handleCopyAs(action) {
+    // Ensure we're on the request editor and full selection is active
+    const targetType = elements.contextMenu.dataset.target;
+    const isFull = elements.contextMenu.dataset.fullSelection === 'true';
+    if (targetType !== 'request' || !isFull) {
+        return;
+    }
+
+    if (!state.selectedRequest || !state.selectedRequest.request) {
+        console.warn('No selected request to copy as curl/bash');
+        return;
+    }
+
+    const req = state.selectedRequest.request;
+    const method = (req.method || 'GET').toUpperCase();
+    const headers = (req.headers || []).filter(h => !h.name.startsWith(':'));
+    const body = req.postData && typeof req.postData.text === 'string' ? req.postData.text : '';
+
+    // Build base curl command
+    const parts = [`curl '${shellEscapeSingle(req.url)}'`];
+    if (method !== 'GET') {
+        parts.push(`-X ${method}`);
+    }
+    headers.forEach(h => {
+        parts.push(`-H '${shellEscapeSingle(`${h.name}: ${h.value}`)}'`);
+    });
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
+        parts.push(`--data-raw '${shellEscapeSingle(body)}'`);
+    }
+    const curlCommand = parts.join(' \\\n  ');
+
+    let textToCopy = '';
+    if (action === 'copy-as-curl') {
+        textToCopy = curlCommand;
+    } else if (action === 'copy-as-bash') {
+        // PowerShell snippet using Invoke-WebRequest with headers and body
+        const psLines = [];
+        psLines.push(`$headers = @{`);
+        headers.forEach(h => {
+            const key = h.name.replace(/'/g, "''");
+            const val = String(h.value).replace(/'/g, "''");
+            psLines.push(`    '${key}' = '${val}'`);
+        });
+        psLines.push('}');
+        psLines.push('');
+        const methodPs = method === 'GET' ? '' : `-Method '${method}' `;
+        const bodyPs = body && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')
+            ? `-Body '${body.replace(/'/g, "''")}' `
+            : '';
+        psLines.push(`Invoke-WebRequest -Uri '${req.url.replace(/'/g, "''")}' ${methodPs}-Headers $headers ${bodyPs}| Select-Object -ExpandProperty Content`);
+        textToCopy = psLines.join('\n');
+    } else if (action === 'copy-as-python') {
+        // Python requests snippet
+        const pyLines = [];
+        pyLines.push('import requests');
+        pyLines.push('');
+        pyLines.push(`url = '${req.url.replace(/'/g, "\\'")}'`);
+        pyLines.push('');
+        pyLines.push('headers = {');
+        headers.forEach(h => {
+            const key = h.name.replace(/'/g, "\\'");
+            const val = String(h.value).replace(/'/g, "\\'");
+            pyLines.push(`    '${key}': '${val}',`);
+        });
+        pyLines.push('}');
+        const methodLower = method.toLowerCase();
+        const canUseShortcut = ['get', 'post', 'put', 'patch', 'delete'].includes(methodLower);
+        const hasBody = body && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE');
+        if (hasBody) {
+            const bodyEsc = body.replace(/'/g, "\\'");
+            pyLines.push('');
+            pyLines.push(`data = '${bodyEsc}'`);
+            pyLines.push('');
+            if (canUseShortcut) {
+                pyLines.push(`response = requests.${methodLower}(url, headers=headers, data=data)`);
+            } else {
+                pyLines.push(`response = requests.request('${method}', url, headers=headers, data=data)`);
+            }
+        } else {
+            pyLines.push('');
+            if (canUseShortcut) {
+                pyLines.push(`response = requests.${methodLower}(url, headers=headers)`);
+            } else {
+                pyLines.push(`response = requests.request('${method}', url, headers=headers)`);
+            }
+        }
+        pyLines.push('');
+        pyLines.push('print(response.status_code)');
+        pyLines.push('print(response.text)');
+        textToCopy = pyLines.join('\n');
+    } else if (action === 'copy-as-fetch') {
+        // JavaScript fetch snippet (clean, browser-like)
+        const urlEsc = req.url.replace(/'/g, "\\'");
+        const ignoreHeaders = ['host', 'connection', 'content-length'];
+        const filteredHeaders = headers.filter(h => !ignoreHeaders.includes(h.name.toLowerCase()));
+        const hasBody = body && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE');
+        const hasCookie = headers.some(h => h.name.toLowerCase() === 'cookie');
+        const refererHeader = headers.find(h => h.name.toLowerCase() === 'referer');
+
+        const jsLines = [];
+        jsLines.push(`fetch('${urlEsc}', {`);
+        jsLines.push(`  method: '${method}',`);
+
+        // Headers
+        if (filteredHeaders.length > 0) {
+            jsLines.push('  headers: {');
+            filteredHeaders.forEach(h => {
+                const key = h.name.toLowerCase().replace(/'/g, "\\'");
+                const val = String(h.value).replace(/'/g, "\\'");
+                jsLines.push(`    '${key}': '${val}',`);
+            });
+            jsLines.push('  },');
+        }
+
+        // Body (if any)
+        if (hasBody) {
+            // Prefer JSON-style literal if content-type is JSON
+            const ct = headers.find(h => h.name.toLowerCase() === 'content-type')?.value || '';
+            if (ct.toLowerCase().includes('application/json')) {
+                jsLines.push(`  body: ${JSON.stringify(body)},`);
+            } else {
+                const bodyEsc = body.replace(/'/g, "\\'");
+                jsLines.push(`  body: '${bodyEsc}',`);
+            }
+        } else {
+            jsLines.push('  body: null,');
+        }
+
+        // Referrer
+        if (refererHeader) {
+            const refEsc = String(refererHeader.value).replace(/'/g, "\\'");
+            jsLines.push(`  referrer: '${refEsc}',`);
+        }
+
+        // Credentials based on presence of cookies
+        if (hasCookie) {
+            jsLines.push(`  credentials: 'include',`);
+        }
+
+        // Mode (reasonable default)
+        jsLines.push(`  mode: 'cors',`);
+        jsLines.push('})');
+        jsLines.push('  .then(res => res.text())');
+        jsLines.push('  .then(console.log)');
+        jsLines.push('  .catch(console.error);');
+        textToCopy = jsLines.join('\n');
+    } else {
+        return;
+    }
+
+    // Copy to clipboard
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textToCopy).catch(err => {
+            console.warn('Failed to write to clipboard via navigator.clipboard, falling back:', err);
+            fallbackCopyText(textToCopy);
+        });
+    } else {
+        fallbackCopyText(textToCopy);
+    }
+}
+
+// Fallback copy implementation for older environments
+function fallbackCopyText(text) {
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+    } catch (e) {
+        console.warn('Fallback copy failed:', e);
     }
 }
 

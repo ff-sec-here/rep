@@ -66,6 +66,9 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
 - Pretty / Raw / Hex views; layout toggle (horizontal/vertical).
 - Converters: Base64, URL encode/decode, JWT decode, Hex/UTF-8.
 - History, undo/redo, and syntax highlighting for requests/responses.
+- Context menu helpers on the request editor:
+  - Convert selected text (Base64, URL encode/decode, JWT decode).
+  - **Copy as** full HTTP request in multiple languages: `curl`, PowerShell (`Invoke-WebRequest`), Python (`requests`), and JavaScript `fetch`.
 - Screenshot editor for request/response pairs: full-content capture, side‑by‑side or stacked layout, zoom, highlight and black-box redaction, resizable/movable annotations, keyboard delete, and undo/redo for all edits.
 
 ### Bulk & Automation

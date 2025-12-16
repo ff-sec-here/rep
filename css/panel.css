@@ -1633,6 +1633,16 @@ pre {
     position: relative;
 }
 
+.context-menu-item.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+    background: transparent;
+    color: var(--text-color);
+}
+
 .context-menu-item:hover {
     background: var(--hover-bg);
     color: var(--accent-color);
