@@ -83,7 +83,9 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
   - Supports AWS, GitHub, Google, Slack, Stripe, Twilio, Azure, and many more service providers
   - Rules stored locally in `rules/` directory for offline use
   - **Note**: Secret scanning only analyzes JavaScript files from the **current inspected tab**.
+  - **Export**: Export all secrets to CSV for analysis and reporting
 - **Endpoint Extractor**: full URLs, relative paths, GraphQL; method detection; one-click copy (rebuilds base URL).
+  - **Export**: Export all endpoints to CSV with method, endpoint path, confidence, and source file
 - **Parameter Extractor**: passive JavaScript parameter discovery with intelligent grouping and risk assessment.
   - **Parameter Types**: Extracts query, body, header, and path parameters from JavaScript files
   - **Grouped by Endpoint**: Parameters are organized by endpoint with expandable/collapsible groups
@@ -94,6 +96,13 @@ rep+ is a lightweight Chrome DevTools extension inspired by Burp Suite's Repeate
   - **Location Badges**: Visual indicators for parameter location (query/body/header/path)
   - **Domain Filtering**: Filter parameters by source domain with accurate counts
   - **Column Sorting**: Sort by parameter name, location, endpoint, method, risk level, or confidence
+  - **Export Options**:
+    - **CSV Export**: Export all parameters with location, endpoint, method, risk level, and confidence
+    - **Postman Collection Export**: Generate ready-to-import Postman collection JSON with all endpoints and parameters
+      - Automatically groups parameters by endpoint
+      - Includes query, body, and header parameters
+      - Uses Postman variable syntax (`{{paramName}}`) for easy testing
+      - Perfect for security testers who want to quickly import discovered APIs into Postman
 - **Response Search**: regex support, match preview, pagination, domain filter.
 
 ### AI Assistance

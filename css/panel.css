@@ -2711,6 +2711,47 @@ pre {
     color: #1967d2;
 }
 
+/* Export Button */
+.export-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.export-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.export-btn:active {
+    transform: scale(0.98);
+}
+
+.export-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.light-theme .export-btn {
+    background-color: #f8f9fa;
+    border-color: #dadce0;
+}
+
+.light-theme .export-btn:hover {
+    background-color: #e8eaed;
+    border-color: #1967d2;
+    color: #1967d2;
+}
+
 .secret-file a {
     color: inherit;
     text-decoration: none;

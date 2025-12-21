@@ -1,11 +1,154 @@
 // Extractor UI Module
-import { escapeHtml, copyToClipboard } from '../../core/utils/dom.js';
+import { escapeHtml, copyToClipboard, downloadCSV, downloadJSON } from '../../core/utils/dom.js';
 
 // Helper to escape strings for single-quoted shell contexts (curl)
 function shellEscapeSingle(str) {
     if (str == null) return '';
     // Replace ' with '\'' pattern for POSIX shells
     return String(str).replace(/'/g, `'\\''`);
+}
+
+// Generate Postman Collection v2.1 from endpoint groups
+function generatePostmanCollection(endpointGroups) {
+    const items = [];
+    
+    endpointGroups.forEach(group => {
+        const endpoint = group.endpoint || '';
+        const method = (group.method || 'GET').toUpperCase();
+        const sourceFile = group.sourceFile || '';
+        
+        // Construct full URL from endpoint path
+        let fullUrl = endpoint;
+        let baseUrl = '';
+        try {
+            if (endpoint.startsWith('/')) {
+                const sourceUrl = new URL(sourceFile);
+                baseUrl = `${sourceUrl.protocol}//${sourceUrl.host}`;
+                fullUrl = `${baseUrl}${endpoint}`;
+            } else if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+                const sourceUrl = new URL(sourceFile);
+                baseUrl = `${sourceUrl.protocol}//${sourceUrl.host}`;
+                fullUrl = `${baseUrl}/${endpoint}`;
+            } else {
+                const url = new URL(endpoint);
+                baseUrl = `${url.protocol}//${url.host}`;
+                fullUrl = endpoint;
+            }
+        } catch (e) {
+            // If URL parsing fails, try to extract origin from sourceFile manually
+            if (sourceFile) {
+                const match = sourceFile.match(/^(https?:\/\/[^\/]+)/);
+                if (match) {
+                    baseUrl = match[1];
+                    if (endpoint.startsWith('/')) {
+                        fullUrl = `${baseUrl}${endpoint}`;
+                    } else {
+                        fullUrl = `${baseUrl}/${endpoint}`;
+                    }
+                }
+            }
+        }
+        
+        // Parse URL
+        let urlObj;
+        try {
+            urlObj = new URL(fullUrl);
+        } catch (e) {
+            // Skip invalid URLs
+            return;
+        }
+        
+        // Separate parameters by location
+        const queryParams = [];
+        const bodyParams = {};
+        const headerParams = {};
+        
+        group.params.forEach(param => {
+            const paramName = param.name || '';
+            const paramValue = '{{' + paramName + '}}'; // Postman variable syntax
+            
+            if (param.location === 'query') {
+                queryParams.push({
+                    key: paramName,
+                    value: paramValue,
+                    description: `Risk: ${param.riskLevel || 'low'}, Confidence: ${param.confidence || 0}%`
+                });
+            } else if (param.location === 'body') {
+                bodyParams[paramName] = paramValue;
+            } else if (param.location === 'header') {
+                headerParams[paramName] = paramValue;
+            }
+        });
+        
+        // Build URL with query params
+        const urlPath = urlObj.pathname.split('/').filter(p => p);
+        const query = queryParams.map(qp => ({
+            key: qp.key,
+            value: qp.value,
+            description: qp.description
+        }));
+        
+        // Build request object
+        const request = {
+            method: method,
+            header: Object.entries(headerParams).map(([key, value]) => ({
+                key: key,
+                value: value,
+                type: 'text'
+            })),
+            url: {
+                raw: fullUrl + (queryParams.length > 0 ? '?' + queryParams.map(q => `${q.key}=${q.value}`).join('&') : ''),
+                protocol: urlObj.protocol.replace(':', ''),
+                host: urlObj.hostname.split('.'),
+                path: urlPath.length > 0 ? urlPath : [''],
+                query: query
+            }
+        };
+        
+        // Add body for POST/PUT/PATCH/DELETE
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && Object.keys(bodyParams).length > 0) {
+            request.body = {
+                mode: 'raw',
+                raw: JSON.stringify(bodyParams, null, 2),
+                options: {
+                    raw: {
+                        language: 'json'
+                    }
+                }
+            };
+            // Ensure Content-Type header is set
+            const hasContentType = request.header.some(h => h.key.toLowerCase() === 'content-type');
+            if (!hasContentType) {
+                request.header.push({
+                    key: 'Content-Type',
+                    value: 'application/json',
+                    type: 'text'
+                });
+            }
+        }
+        
+        // Create request name from endpoint
+        const requestName = `${method} ${endpoint}`;
+        
+        items.push({
+            name: requestName,
+            request: request,
+            response: []
+        });
+    });
+    
+    // Create Postman Collection v2.1 format
+    const collection = {
+        info: {
+            name: 'rep+ Extracted Parameters',
+            description: 'API endpoints and parameters extracted by rep+',
+            schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+            _exporter_id: 'rep-plus'
+        },
+        item: items
+    };
+    
+    return collection;
 }
 
 // Generate curl command from endpoint and parameters
@@ -353,7 +496,7 @@ export function initExtractorUI() {
                         extractorProgressBar.style.setProperty('--progress', `${percent}%`);
                         if (isComplete) {
                             extractorProgressText.textContent = `Scan complete! Found ${foundCount} secret${foundCount !== 1 ? 's' : ''}`;
-                        } else {
+                    } else {
                             extractorProgressText.textContent = `Scanning ${processed}/${total} files... Found ${foundCount} secret${foundCount !== 1 ? 's' : ''}`;
                         }
                     });
@@ -399,7 +542,7 @@ export function initExtractorUI() {
                 // This is especially important for fast scans
                 await new Promise(resolve => setTimeout(resolve, remainingTime + 800));
 
-                // Extract Endpoints
+                            // Extract Endpoints
                 for (const req of jsRequests) {
                     try {
                         // Use stored responseBody if available, otherwise try getContent
@@ -486,7 +629,7 @@ export function initExtractorUI() {
 
                 // Populate domain filter
                 populateDomainFilter();
-                
+
                 // Show domain filter if we have results and multiple domains
                 const totalDomains = scannedDomains.size;
                 if (totalDomains > 1) {
@@ -591,7 +734,7 @@ export function initExtractorUI() {
                 const file = result.file || result.sourceFile || '';
                 const domain = getDomainFromUrl(file);
                 if (domain && domain !== 'unknown') {
-                    domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+                domainCounts[domain] = (domainCounts[domain] || 0) + 1;
                 }
             });
         }
@@ -727,7 +870,18 @@ export function initExtractorUI() {
         const confidenceSort = secretsSort.column === 'confidence' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
         const fileSort = secretsSort.column === 'file' ? (secretsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
 
-        let html = `<table class="secrets-table"><thead><tr>
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--text-color); opacity: 0.8;">${sortedResults.length} secret${sortedResults.length !== 1 ? 's' : ''} found</span>
+            <button id="export-secrets-csv" class="export-btn" title="Export to CSV">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export CSV
+            </button>
+        </div>`;
+        html += `<table class="secrets-table"><thead><tr>
             <th class="sortable" data-column="type">Type${typeSort}</th>
             <th class="sortable" data-column="match">Match${matchSort}</th>
             <th class="sortable" data-column="confidence">Confidence${confidenceSort}</th>
@@ -766,6 +920,21 @@ export function initExtractorUI() {
                 renderSecretResults(results);
             });
         });
+
+        // Add export CSV handler
+        const exportBtn = secretsResults.querySelector('#export-secrets-csv');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                const exportData = sortedResults.map(secret => ({
+                    Type: secret.type || '',
+                    Match: secret.match || '',
+                    Confidence: `${secret.confidence || 0}%`,
+                    File: secret.file || ''
+                }));
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                downloadCSV(exportData, `rep-plus-secrets-${timestamp}.csv`, ['Type', 'Match', 'Confidence', 'File']);
+            });
+        }
     }
 
     // Sort function for endpoints
@@ -831,7 +1000,18 @@ export function initExtractorUI() {
         const confidenceSort = endpointsSort.column === 'confidence' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
         const fileSort = endpointsSort.column === 'file' ? (endpointsSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
 
-        let html = `<table class="secrets-table"><thead><tr>
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--text-color); opacity: 0.8;">${sortedResults.length} endpoint${sortedResults.length !== 1 ? 's' : ''} found</span>
+            <button id="export-endpoints-csv" class="export-btn" title="Export to CSV">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export CSV
+            </button>
+        </div>`;
+        html += `<table class="secrets-table"><thead><tr>
             <th class="sortable" data-column="method">Method${methodSort}</th>
             <th class="sortable" data-column="endpoint">Endpoint${endpointSort}</th>
             <th class="sortable" data-column="confidence">Confidence${confidenceSort}</th>
@@ -901,6 +1081,21 @@ export function initExtractorUI() {
                 }, 1000);
             });
         });
+
+        // Add export CSV handler
+        const exportBtn = endpointsResults.querySelector('#export-endpoints-csv');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                const exportData = sortedResults.map(endpoint => ({
+                    Method: endpoint.method || 'GET',
+                    Endpoint: endpoint.endpoint || '',
+                    Confidence: `${endpoint.confidence || 0}%`,
+                    'Source File': endpoint.file || ''
+                }));
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                downloadCSV(exportData, `rep-plus-endpoints-${timestamp}.csv`, ['Method', 'Endpoint', 'Confidence', 'Source File']);
+            });
+        }
     }
 
     // Sort function for parameters
@@ -1023,7 +1218,28 @@ export function initExtractorUI() {
         const endpointSort = parametersSort.column === 'endpoint' ? (parametersSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
         const methodSort = parametersSort.column === 'method' ? (parametersSort.direction === 'asc' ? ' ▲' : ' ▼') : '';
 
-        let html = `<table class="secrets-table parameter-groups-table"><thead><tr>
+        let html = `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--text-color); opacity: 0.8;">${endpointGroupsArray.length} endpoint${endpointGroupsArray.length !== 1 ? 's' : ''} with ${filteredResults.length} parameter${filteredResults.length !== 1 ? 's' : ''}</span>
+            <div style="display: flex; gap: 8px;">
+                <button id="export-parameters-csv" class="export-btn" title="Export to CSV">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export CSV
+                </button>
+                <button id="export-parameters-postman" class="export-btn" title="Export to Postman Collection">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export Postman
+                </button>
+            </div>
+        </div>`;
+        html += `<table class="secrets-table parameter-groups-table"><thead><tr>
             <th class="sortable" data-column="endpoint">Endpoint${endpointSort}</th>
             <th class="sortable" data-column="method">Method${methodSort}</th>
             <th>Parameters</th>
@@ -1151,6 +1367,34 @@ export function initExtractorUI() {
                 renderParameterResults(results, showHidden);
             });
         });
+
+        // Add export CSV handler
+        const exportCsvBtn = parametersResults.querySelector('#export-parameters-csv');
+        if (exportCsvBtn) {
+            exportCsvBtn.addEventListener('click', () => {
+                const exportData = filteredResults.map(param => ({
+                    Parameter: param.name || '',
+                    Location: param.location || '',
+                    Endpoint: param.endpoint || '',
+                    Method: param.method || 'GET',
+                    'Risk Level': param.riskLevel || 'low',
+                    Confidence: `${param.confidence || 0}%`,
+                    'Source File': param.sourceFile || param.file || ''
+                }));
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                downloadCSV(exportData, `rep-plus-parameters-${timestamp}.csv`, ['Parameter', 'Location', 'Endpoint', 'Method', 'Risk Level', 'Confidence', 'Source File']);
+            });
+        }
+
+        // Add export Postman handler
+        const exportPostmanBtn = parametersResults.querySelector('#export-parameters-postman');
+        if (exportPostmanBtn) {
+            exportPostmanBtn.addEventListener('click', () => {
+                const postmanCollection = generatePostmanCollection(endpointGroupsArray);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                downloadJSON(postmanCollection, `rep-plus-postman-${timestamp}.json`);
+            });
+        }
     }
 
     function renderResponseSearchResults(results) {
