@@ -311,12 +311,13 @@ export function createRequestItemElement(request, index, categoryData) {
     const numberSpan = document.createElement('span');
     numberSpan.className = 'req-number';
     numberSpan.textContent = `#${index + 1}`;
-    numberSpan.style.marginRight = '8px';
-    numberSpan.style.color = 'var(--text-secondary)';
+    numberSpan.style.marginRight = '2px';
+    numberSpan.style.color = '#9aa0a6';
     numberSpan.style.fontSize = '11px';
-    numberSpan.style.minWidth = '30px';
+    numberSpan.style.minWidth = '18px';
     numberSpan.style.display = 'inline-block';
     numberSpan.style.textAlign = 'right';
+    numberSpan.style.padding = '0';
 
     actionsDiv.appendChild(starBtn);
     actionsDiv.appendChild(colorBtn);
